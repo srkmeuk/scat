@@ -112,32 +112,23 @@ class DiagLteLogParser:
         return -110 + rssi * 0.0625
 
     # ML1
-
     def parse_lte_ml1_scell_meas(self, pkt_header, pkt_body, args):
         pkt_ts = util.parse_qxdm_ts(pkt_header.timestamp)
         pkt_version = pkt_body[0]
 
         item_struct = namedtuple('QcDiagLteMl1ScellMeas', 'rrc_rel reserved1 earfcn pci_serv_layer_prio meas_rsrp avg_rsrp rsrq rssi rxlev s_search')
-        if pkt_version == 4: # Version 4
-            # Version, RRC standard release, EARFCN, PCI - Serving Layer Priority
-            # Measured, Average RSRP, Measured, Average RSRQ, Measured RSSI
-            # Q_rxlevmin, P_max, Max UE TX Power, S_rxlev, Num DRX S Fail
-            # S Intra Searcn, S Non Intra Search, Meas Rules Updated, Meas Rules
-            # R9 Info (last 4b) - Q Qual Min, S Qual, S Intra Search Q, S Non Intra Search Q
+        if pkt_version == 4:
             item = item_struct._make(struct.unpack('<BHHHLLLLLL', pkt_body[1:32]))
-        elif pkt_version == 5: # Version 5
-            # EARFCN -> 4 bytes
-            # PCI, Serv Layer Priority -> 4 bytes
+        elif pkt_version == 5:
             item = item_struct._make(struct.unpack('<BHLH2xLLLLLL', pkt_body[1:36]))
         else:
             if self.parent:
                 self.parent.logger.log(logging.WARNING, 'Unknown LTE ML1 Serving Cell Meas packet version 0x{:02x}'.format(pkt_version))
-                self.parent.logger.log(logging.DEBUG, util.xxd(pkt_body))
             return None
 
         pci_serv_layer_prio_bits = bitstring.Bits(uint=item.pci_serv_layer_prio, length=16)
         pci = pci_serv_layer_prio_bits[0:9].uint
-        serv_layer_priority = pci_serv_layer_prio_bits[9:16].uint
+
         meas_rsrp = item.meas_rsrp & 0xfff
         avg_rsrp = item.avg_rsrp & 0xfff
 
@@ -148,48 +139,30 @@ class DiagLteLogParser:
         rssi_bits = bitstring.Bits(uint=item.rssi, length=32)
         meas_rssi = rssi_bits[10:21].uint
 
-        rxlev_bits = bitstring.Bits(uint=item.rxlev, length=32)
-        q_rxlevmin = rxlev_bits[0:6].uint
-        p_max = rxlev_bits[6:13].uint
-        max_ue_tx_pwr = rxlev_bits[13:19].uint
-        s_rxlev = rxlev_bits[19:26].uint
-        num_drx_s_fail = rxlev_bits[26:32].uint
+        # omitting as currently not used TODO look at including TX pwer.
+        # rxlev_bits = bitstring.Bits(uint=item.rxlev, length=32)
+        # q_rxlevmin = rxlev_bits[0:6].uint
+        # p_max = rxlev_bits[6:13].uint
+        # max_ue_tx_pwr = rxlev_bits[13:19].uint
+        # s_rxlev = rxlev_bits[19:26].uint
+        # num_drx_s_fail = rxlev_bits[26:32].uint
+        #
+        # s_search_bits = bitstring.Bits(uint=item.s_search, length=32)
+        # s_intra_search = s_search_bits[0:6].uint
+        # s_non_intra_search = s_search_bits[6:12].uint
 
-        s_search_bits = bitstring.Bits(uint=item.s_search, length=32)
-        s_intra_search = s_search_bits[0:6].uint
-        s_non_intra_search = s_search_bits[6:12].uint
+        parsed_data = {
+            'type': 'SCAT_LTE_SCELL',
+            'earfcn': item.earfcn,
+            'pci': pci,
+            'rsrp': round(self.parse_rsrp(meas_rsrp), 2),
+            'avg_rsrp': round(self.parse_rsrp(avg_rsrp), 2),
+            'rssi': round(self.parse_rssi(meas_rssi), 2),
+            'rsrq': round(self.parse_rsrq(meas_rsrq), 2),
+            'avg_rsrq': round(self.parse_rsrq(avg_rsrq), 2)
+        }
 
-        if pkt_version == 4:
-            if item.rrc_rel == 0x01: # RRC Rel. 9
-                r9_data_interim = struct.unpack('<L', pkt_body[32:36])[0]
-                r9_data_bits = bitstring.Bits(uint=r9_data_interim, length=32)
-                q_qual_min = r9_data_bits[0:7].uint
-                s_qual = r9_data_bits[7:14].uint
-                s_intra_search_q = r9_data_bits[14:20].uint
-                s_nonintra_search_q = r9_data_bits[20:26].uint
-            else:
-                if self.parent:
-                    self.parent.logger.log(logging.WARNING, 'Unknown LTE ML1 Serving Cell Meas packet - RRC version {}'.format(item.rrc_rel))
-                    self.parent.logger.log(logging.DEBUG, util.xxd(pkt_body))
-        elif pkt_version == 5:
-            if item.rrc_rel == 0x01: # RRC Rel. 9
-                r9_data_interim = struct.unpack('<L', pkt_body[36:40])[0]
-                r9_data_bits = bitstring.Bits(uint=r9_data_interim, length=32)
-                q_qual_min = r9_data_bits[0:7].uint
-                s_qual = r9_data_bits[7:14].uint
-                s_intra_search_q = r9_data_bits[14:20].uint
-                s_nonintra_search_q = r9_data_bits[20:26].uint
-            else:
-                if self.parent:
-                    self.parent.logger.log(logging.WARNING, 'Unknown LTE ML1 Serving Cell Meas packet - RRC version {}'.format(item.rrc_rel))
-                    self.parent.logger.log(logging.DEBUG, util.xxd(pkt_body))
-
-        real_rsrp = self.parse_rsrp(meas_rsrp)
-        real_rssi = self.parse_rssi(meas_rssi)
-        real_rsrq = self.parse_rsrq(meas_rsrq)
-
-        return {'stdout': 'LTE SCell: EARFCN: {}, PCI: {:3d}, Measured RSRP: {:.2f}, Measured RSSI: {:.2f}, Measured RSRQ: {:.2f}'.format(item.earfcn, pci, real_rsrp, real_rssi, real_rsrq),
-                'ts': pkt_ts}
+        return {'json_out': parsed_data, 'ts': pkt_ts}
 
     def parse_lte_ml1_ncell_meas(self, pkt_header, pkt_body, args):
         pkt_ts = util.parse_qxdm_ts(pkt_header.timestamp)

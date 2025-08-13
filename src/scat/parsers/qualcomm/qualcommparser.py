@@ -20,6 +20,7 @@ import scat.util as util
 import struct
 import uuid
 import zlib
+import json
 
 from scat.parsers.qualcomm import diagcmd
 from scat.parsers.qualcomm.diaggsmlogparser import DiagGsmLogParser
@@ -585,6 +586,10 @@ class QualcommParser:
             ts = parse_result['ts']
         else:
             ts = datetime.datetime.now()
+
+        if 'json_out' in parse_result:
+            print(json.dumps(parse_result['json_out']))
+            return
 
         if 'cp' in parse_result:
             if 'layer' in parse_result:

@@ -136,11 +136,24 @@ def scat_main():
     elif args.usb:
         io_device = scat.iodevices.USBIO()
         if args.address:
-            usb_bus, usb_device = args.address.split(':')
-            usb_bus = int(usb_bus, base=10)
-            usb_device = int(usb_device, base=10)
-            io_device.probe_device_by_bus_dev(usb_bus, usb_device)
-        elif args.vendor == None:
+            try:
+                usb_bus, usb_device = args.address.split(':')
+                usb_bus = int(usb_bus, base=10)
+                usb_device = int(usb_device, base=10)
+                io_device.probe_device_by_bus_dev(usb_bus, usb_device)
+            except (ValueError, IndexError):
+                # The user might have provided VID:PID instead of BUS:DEV.
+                # Let's try parsing as hex and using probe_device_by_vid_pid.
+                print("Warning: -a/--address expects BUS:DEVICE in decimal. It seems you provided VID:PID in hexadecimal. Trying to interpret it as such.", file=sys.stderr)
+                try:
+                    vid_str, pid_str = args.address.split(':')
+                    vid = int(vid_str, 16)
+                    pid = int(pid_str, 16)
+                    io_device.probe_device_by_vid_pid(vid, pid)
+                except (ValueError, IndexError):
+                    print("Error: Could not parse USB address '{}' as BUS:DEVICE (decimal) or VID:PID (hex).".format(args.address), file=sys.stderr)
+                    sys.exit(1)
+        elif args.vendor is None:
             io_device.guess_device()
         else:
             io_device.probe_device_by_vid_pid(args.vendor, args.product)

@@ -140,10 +140,10 @@ class DiagLteLogParser:
         meas_rssi = rssi_bits[10:21].uint
 
         # omitting as currently not used TODO look at including TX pwer.
-        # rxlev_bits = bitstring.Bits(uint=item.rxlev, length=32)
-        # q_rxlevmin = rxlev_bits[0:6].uint
-        # p_max = rxlev_bits[6:13].uint
-        # max_ue_tx_pwr = rxlev_bits[13:19].uint
+        rxlev_bits = bitstring.Bits(uint=item.rxlev, length=32)
+        q_rxlevmin = rxlev_bits[0:6].uint
+        p_max = rxlev_bits[6:13].uint
+        max_ue_tx_pwr = rxlev_bits[13:19].uint
         # s_rxlev = rxlev_bits[19:26].uint
         # num_drx_s_fail = rxlev_bits[26:32].uint
         #
@@ -159,7 +159,8 @@ class DiagLteLogParser:
             'avg_rsrp': round(self.parse_rsrp(avg_rsrp), 2),
             'rssi': round(self.parse_rssi(meas_rssi), 2),
             'rsrq': round(self.parse_rsrq(meas_rsrq), 2),
-            'avg_rsrq': round(self.parse_rsrq(avg_rsrq), 2)
+            'avg_rsrq': round(self.parse_rsrq(avg_rsrq), 2),
+            'max_ue_tx_pwr' : max_ue_tx_pwr
         }
 
         return {'json_out': parsed_data, 'ts': pkt_ts}

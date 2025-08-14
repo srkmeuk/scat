@@ -1053,23 +1053,23 @@ class DiagLteLogParser:
         else:
             bw_str = '{}/{} PRBs'.format(item.dl_bw, item.ul_bw)
 
-        if self.display_format == 'd':
-            tac_cid_fmt = 'TAC/CID: {}/{}'.format(item.tac, item.cell_id)
-        elif self.display_format == 'x':
-            tac_cid_fmt = 'xTAC/xCID: {:x}/{:x}'.format(item.tac, item.cell_id)
-        elif self.display_format == 'b':
-            tac_cid_fmt = 'TAC/CID: {}/{} ({:#x}/{:#x})'.format(item.tac, item.cell_id, item.tac, item.cell_id)
+        parsed_data = {
+            'type': 'SCAT_LTE_RRC_INFO',
+            'pci': item.pci,
+            'dl_earfcn': item.dl_earfcn,
+            'ul_earfcn': item.ul_earfcn,
+            'dl_bw': item.dl_bw,
+            'ul_bw': item.ul_bw,
+            'cell_id': item.cell_id,
+            'tac': item.tac,
+            'band': item.band,
+            'mcc': item.mcc,
+            'mnc': "{:02d}".format(item.mnc) if item.mnc_digit == 2 else "{:03d}".format(item.mnc),
+            'bw_str': bw_str
+        }
 
-        if item.mnc_digit == 2:
-            stdout = 'LTE RRC SCell Info: EARFCN: {}/{}, Band: {}, Bandwidth: {}, PCI: {}, MCC: {}, MNC: {:02}, {}'.format(item.dl_earfcn,
-                item.ul_earfcn, item.band, bw_str, item.pci, item.mcc, item.mnc, tac_cid_fmt)
-        elif item.mnc_digit == 3:
-            stdout = 'LTE RRC SCell Info: EARFCN: {}/{}, Band: {}, Bandwidth: {}, PCI: {}, MCC: {}, MNC: {:03}, {}'.format(item.dl_earfcn,
-                item.ul_earfcn, item.band, bw_str, item.pci, item.mcc, item.mnc, tac_cid_fmt)
-        else:
-            stdout = 'LTE RRC SCell Info: EARFCN: {}/{}, Band: {}, Bandwidth: {}, PCI: {}, MCC: {}, MNC: {}, {}'.format(item.dl_earfcn,
-                item.ul_earfcn, item.band, bw_str, item.pci, item.mcc, item.mnc, tac_cid_fmt)
-        return {'stdout': stdout, 'ts': pkt_ts}
+        return {'json_out': parsed_data, 'ts': pkt_ts}
+
 
     def parse_lte_rrc(self, pkt_header, pkt_body, args):
         pkt_version = pkt_body[0]

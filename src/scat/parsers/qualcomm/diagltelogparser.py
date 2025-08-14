@@ -139,7 +139,6 @@ class DiagLteLogParser:
         rssi_bits = bitstring.Bits(uint=item.rssi, length=32)
         meas_rssi = rssi_bits[10:21].uint
 
-        # omitting as currently not used TODO look at including TX pwer.
         rxlev_bits = bitstring.Bits(uint=item.rxlev, length=32)
         q_rxlevmin = rxlev_bits[0:6].uint
         p_max = rxlev_bits[6:13].uint
@@ -232,139 +231,143 @@ class DiagLteLogParser:
             stdout += '└── Neighbor cell {}: PCI: {:3d}, RSRP: {:.2f}, RSSI: {:.2f}, RSRQ: {:.2f}\n'.format(i, n_pci, n_real_rsrp, n_real_rssi, n_real_rsrq)
         return {'stdout': stdout.rstrip(), 'ts': pkt_ts}
 
-    def parse_lte_ml1_scell_meas_response_cell_v36(self, cell_id, cell_bytes, rsrp_offset=16, snr_offset=80, sir_cinr_offset=104):
-        interim = struct.unpack('<HHH', cell_bytes[0:6])
-        val0_bits = bitstring.Bits(uint=interim[0], length=16)
-        pci = val0_bits[0:9].uint
-        scell_idx = val0_bits[9:12].uint
-        is_scell = val0_bits[12:13].uint
+    def _parse_scell_meas_response_cell(self, cell_bytes, snr_offset=80):
+        """Helper to parse a single cell's data from a measurement response packet."""
+        try:
+            val0_bits = bitstring.Bits(uint=struct.unpack('<H', cell_bytes[0:2])[0], length=16)
+            pci = val0_bits[0:9].uint
 
-        val2_bits = bitstring.Bits(uint=interim[2], length=16)
-        sfn = val2_bits[0:10].uint
-        subfn = val2_bits[10:14].uint
+            interim = struct.unpack('<LL', cell_bytes[snr_offset:snr_offset+8])
+            val_bits = bitstring.Bits().join([bitstring.Bits(uint=x, length=32) for x in interim][::-1])
+            # We use snr0 as the primary SNR value
+            snr = round(val_bits[0:9].uint * 0.1 - 20.0, 2)
 
-        interim = struct.unpack('<LLLLLLLLLLLL', cell_bytes[rsrp_offset:rsrp_offset+48])
-        val_bits = bitstring.Bits().join([bitstring.Bits(uint=x, length=32) for x in interim][::-1])
+            return {'pci': pci, 'snr': snr}
+        except Exception:
+            return None
 
-        rsrp0 = self.parse_rsrp(val_bits[10:22].uint)
-        rsrp1 = self.parse_rsrp(val_bits[44:56].uint)
-        rsrp2 = self.parse_rsrp(val_bits[76:88].uint)
-        rsrp3 = self.parse_rsrp(val_bits[96:108].uint)
-        rsrp = self.parse_rsrp(val_bits[108:120].uint) + 40
-        frsrp = self.parse_rsrp(val_bits[140:152].uint)
+    # def parse_lte_ml1_scell_meas_response(self, pkt_header, pkt_body, args):
+    #     pkt_ts = util.parse_qxdm_ts(pkt_header.timestamp)
+    #     pkt_version = pkt_body[0]
+    #     stdout = ''
+    #
+    #     # First 4b: Version, Number of subpackets, reserved
+    #     # 01 | 01 | 35 0c
+    #     subpkt_struct = namedtuple('QcDiagLteMl1Subpkt', 'id version size')
+    #     if pkt_version == 1: # Version 1
+    #         num_subpkts = pkt_body[1]
+    #         pos = 4
+    #
+    #         for x in range(num_subpkts):
+    #             # 4b: Subpacket ID, Subpacket version, Subpacket size
+    #             # 19 | 30 | 40 02
+    #             subpkt_header = subpkt_struct._make(struct.unpack('<BBH', pkt_body[pos:pos+4]))
+    #             subpkt_body = pkt_body[pos+4:pos+4+subpkt_header.size]
+    #             pos += subpkt_header.size
+    #
+    #             if subpkt_header.id == 0x19:
+    #                 # Serving Cell Measurement Result
+    #                 # EARFCN, num of cell, valid RX data
+    #                 if subpkt_header.version == 36:
+    #                     subpkt_scell_meas_v36_struct = namedtuple('QcDiagLteMl1SubpktScellMeasV36', 'earfcn num_cells valid_rx')
+    #                     subpkt_scell_meas_v36 = subpkt_scell_meas_v36_struct._make(struct.unpack('<LHH', subpkt_body[0:8]))
+    #                     stdout += 'LTE ML1 SCell Meas Response: EARFCN: {}, Number of cells: {}, Valid RX: {}\n'.format(subpkt_scell_meas_v36.earfcn,
+    #                         subpkt_scell_meas_v36.num_cells, subpkt_scell_meas_v36.valid_rx)
+    #
+    #                     pos_meas = 8
+    #                     for y in range(subpkt_scell_meas_v36.num_cells):
+    #                         stdout += self.parse_lte_ml1_scell_meas_response_cell_v36(y, subpkt_body[pos_meas:pos_meas+128])
+    #                         pos_meas += 128
+    #                 elif subpkt_header.version == 48 or subpkt_header.version == 50:
+    #                     # EARFCN, num of cell, valid RX data
+    #                     subpkt_scell_meas_v48_struct = namedtuple('QcDiagLteMl1SubpktScellMeasV48', 'earfcn num_cells valid_rx rx_map')
+    #                     subpkt_scell_meas_v48 = subpkt_scell_meas_v48_struct._make(struct.unpack('<LHHL', subpkt_body[0:12]))
+    #                     stdout += 'LTE ML1 SCell Meas Response: EARFCN: {}, Number of cells: {}, Valid RX: {}\n'.format(subpkt_scell_meas_v48.earfcn,
+    #                         subpkt_scell_meas_v48.num_cells, subpkt_scell_meas_v48.valid_rx)
 
-        rsrq0 = self.parse_rsrq(val_bits[160:170].uint)
-        rsrq1 = self.parse_rsrq(val_bits[180:190].uint)
-        rsrq2 = self.parse_rsrq(val_bits[202:212].uint)
-        rsrq3 = self.parse_rsrq(val_bits[212:222].uint)
-        rsrq = self.parse_rsrq(val_bits[224:234].uint)
-        frsrq = self.parse_rsrq(val_bits[244:254].uint)
-
-        rssi0 = self.parse_rssi(val_bits[256:267].uint)
-        rssi1 = self.parse_rssi(val_bits[267:278].uint)
-        rssi2 = self.parse_rssi(val_bits[288:299].uint)
-        rssi3 = self.parse_rssi(val_bits[299:310].uint)
-        rssi = self.parse_rssi(val_bits[320:331].uint)
-
-        # resid_freq_error = struct.unpack('<H', cell_bytes[70:72])[0]
-
-        interim = struct.unpack('<LL', cell_bytes[snr_offset:snr_offset+8])
-        val_bits = bitstring.Bits().join([bitstring.Bits(uint=x, length=32) for x in interim][::-1])
-        snr0 = val_bits[0:9].uint * 0.1 - 20.0
-        snr1 = val_bits[9:18].uint * 0.1 - 20.0
-        snr2 = val_bits[32:41].uint * 0.1 - 20.0
-        snr3 = val_bits[42:50].uint * 0.1 - 20.0
-
-        interim = struct.unpack('<LLllll', cell_bytes[sir_cinr_offset:sir_cinr_offset+24])
-        prj_sir = interim[0]
-        if prj_sir & (1 << 31):
-            prj_sir = prj_sir - 4294967296
-        prj_sir = prj_sir / 16
-
-        posticrsrq = (float((interim[1]))) * 0.0625 - 30.0
-
-        cinr0 = interim[2]
-        cinr1 = interim[3]
-        cinr2 = interim[4]
-        cinr3 = interim[5]
-
-        return 'LTE ML1 SCell Meas Response (Cell {}): PCI: {}, SFN/SubFN: {}/{}, Serving cell index: {}, is_serving_cell: {}\n'.format(cell_id, pci, sfn, subfn, scell_idx, is_scell)
-
-    def parse_lte_ml1_scell_meas_response_cell_v48(self, cell_id, cell_bytes):
-        # resid_freq_error = struct.unpack('<H', cell_bytes[84:86])[0]
-        return self.parse_lte_ml1_scell_meas_response_cell_v36(cell_id, cell_bytes, snr_offset=92, sir_cinr_offset=116)
-
-    def parse_lte_ml1_scell_meas_response_cell_v60(self, cell_id, cell_bytes):
-        pass
+    #                 pos_meas = 12
+    #                 for y in range(subpkt_scell_meas_v48.num_cells):
+    #                     stdout += self.parse_lte_ml1_scell_meas_response_cell_v48(y, subpkt_body[pos_meas:pos_meas+140])
+    #                     pos_meas += 140
+    #             # elif subpkt_header.version == 60:
+    #             #     subpkt_scell_meas_v60_struct = namedtuple('QcDiagLteMl1SubpktScellMeasV60', 'earfcn num_cells')
+    #             #     subpkt_scell_meas_v60 = subpkt_scell_meas_v60_struct._make(struct.unpack('<LL', subpkt_body[0:8]))
+    #             #     stdout += 'LTE ML1 SCell Meas Response: EARFCN {}, Number of cells = {}\n'.format(subpkt_scell_meas_v60.earfcn,
+    #             #         subpkt_scell_meas_v60.num_cells)
+    #
+    #             #     pos_meas = 8
+    #             #     for y in range(subpkt_scell_meas_v60.num_cells):
+    #             #         # stdout += self.parse_lte_ml1_scell_meas_response_cell_v60(y, subpkt_body[pos_meas:pos_meas+148])
+    #             #         pos_meas += 148
+    #             else:
+    #                 if self.parent:
+    #                     self.parent.logger.log(logging.WARNING, 'Unknown LTE ML1 Serving Cell Meas Serving Cell Measurement Result subpacket version {}'.format(subpkt_header.version))
+    #                     self.parent.logger.log(logging.DEBUG, util.xxd(pkt_body))
+    #         else:
+    #             if self.parent:
+    #                 self.parent.logger.log(logging.WARNING, 'Unknown LTE ML1 Serving Cell Meas subpacket ID 0x{:02x}'.format(subpkt_header.id))
+    #                 self.parent.logger.log(logging.DEBUG, util.xxd(pkt_body))
+    #
+    #     return {'stdout': stdout.rstrip(), 'ts': pkt_ts}
+    # else:
+    #     if self.parent:
+    #         self.parent.logger.log(logging.WARNING, 'Unknown LTE ML1 Serving Cell Meas Response packet version 0x{:02x}'.format(pkt_version))
+    #         self.parent.logger.log(logging.DEBUG, util.xxd(pkt_body))
+    #     return None
 
     def parse_lte_ml1_scell_meas_response(self, pkt_header, pkt_body, args):
         pkt_ts = util.parse_qxdm_ts(pkt_header.timestamp)
         pkt_version = pkt_body[0]
-        stdout = ''
+        json_outputs = []
 
-        # First 4b: Version, Number of subpackets, reserved
-        # 01 | 01 | 35 0c
         subpkt_struct = namedtuple('QcDiagLteMl1Subpkt', 'id version size')
-        if pkt_version == 1: # Version 1
+        if pkt_version == 1:
             num_subpkts = pkt_body[1]
             pos = 4
 
             for x in range(num_subpkts):
-                # 4b: Subpacket ID, Subpacket version, Subpacket size
-                # 19 | 30 | 40 02
+                if pos + 4 > len(pkt_body): break
                 subpkt_header = subpkt_struct._make(struct.unpack('<BBH', pkt_body[pos:pos+4]))
-                subpkt_body = pkt_body[pos+4:pos+4+subpkt_header.size]
-                pos += subpkt_header.size
+                subpkt_body_content = pkt_body[pos+4 : pos+4+subpkt_header.size]
+                pos += (4 + subpkt_header.size)
 
-                if subpkt_header.id == 0x19:
-                    # Serving Cell Measurement Result
-                    # EARFCN, num of cell, valid RX data
+                if subpkt_header.id == 0x19: # Serving Cell Measurement Result
+                    cell_data_size = 0
+                    snr_offset_val = 80
+                    header_size = 0
+                    num_cells = 0
+
                     if subpkt_header.version == 36:
-                        subpkt_scell_meas_v36_struct = namedtuple('QcDiagLteMl1SubpktScellMeasV36', 'earfcn num_cells valid_rx')
-                        subpkt_scell_meas_v36 = subpkt_scell_meas_v36_struct._make(struct.unpack('<LHH', subpkt_body[0:8]))
-                        stdout += 'LTE ML1 SCell Meas Response: EARFCN: {}, Number of cells: {}, Valid RX: {}\n'.format(subpkt_scell_meas_v36.earfcn,
-                            subpkt_scell_meas_v36.num_cells, subpkt_scell_meas_v36.valid_rx)
+                        if len(subpkt_body_content) < 8: continue
+                        header_size = 8
+                        cell_data_size = 128
+                        num_cells = struct.unpack('<H', subpkt_body_content[4:6])[0]
+                    elif subpkt_header.version in (48, 50):
+                        if len(subpkt_body_content) < 12: continue
+                        header_size = 12
+                        cell_data_size = 140
+                        snr_offset_val = 92
+                        num_cells = struct.unpack('<H', subpkt_body_content[4:6])[0]
 
-                        pos_meas = 8
-                        for y in range(subpkt_scell_meas_v36.num_cells):
-                            stdout += self.parse_lte_ml1_scell_meas_response_cell_v36(y, subpkt_body[pos_meas:pos_meas+128])
-                            pos_meas += 128
-                    elif subpkt_header.version == 48 or subpkt_header.version == 50:
-                        # EARFCN, num of cell, valid RX data
-                        subpkt_scell_meas_v48_struct = namedtuple('QcDiagLteMl1SubpktScellMeasV48', 'earfcn num_cells valid_rx rx_map')
-                        subpkt_scell_meas_v48 = subpkt_scell_meas_v48_struct._make(struct.unpack('<LHHL', subpkt_body[0:12]))
-                        stdout += 'LTE ML1 SCell Meas Response: EARFCN: {}, Number of cells: {}, Valid RX: {}\n'.format(subpkt_scell_meas_v48.earfcn,
-                            subpkt_scell_meas_v48.num_cells, subpkt_scell_meas_v48.valid_rx)
+                    if cell_data_size > 0:
+                        pos_meas = header_size
+                        for y in range(num_cells):
+                            if pos_meas + cell_data_size > len(subpkt_body_content): break
+                            cell_bytes = subpkt_body_content[pos_meas : pos_meas + cell_data_size]
+                            cell_data = self._parse_scell_meas_response_cell(cell_bytes, snr_offset=snr_offset_val)
+                            if cell_data:
+                                json_outputs.append({
+                                    'type': 'SCAT_LTE_SNR_INFO',
+                                    'pci': cell_data['pci'],
+                                    'snr': cell_data['snr']
+                                })
+                            pos_meas += cell_data_size
 
-                        pos_meas = 12
-                        for y in range(subpkt_scell_meas_v48.num_cells):
-                            stdout += self.parse_lte_ml1_scell_meas_response_cell_v48(y, subpkt_body[pos_meas:pos_meas+140])
-                            pos_meas += 140
-                    # elif subpkt_header.version == 60:
-                    #     subpkt_scell_meas_v60_struct = namedtuple('QcDiagLteMl1SubpktScellMeasV60', 'earfcn num_cells')
-                    #     subpkt_scell_meas_v60 = subpkt_scell_meas_v60_struct._make(struct.unpack('<LL', subpkt_body[0:8]))
-                    #     stdout += 'LTE ML1 SCell Meas Response: EARFCN {}, Number of cells = {}\n'.format(subpkt_scell_meas_v60.earfcn,
-                    #         subpkt_scell_meas_v60.num_cells)
+        # To avoid flooding, we only return the first valid SNR report found in the packet.
+        if json_outputs:
+            return {'json_out': json_outputs[0], 'ts': pkt_ts}
 
-                    #     pos_meas = 8
-                    #     for y in range(subpkt_scell_meas_v60.num_cells):
-                    #         # stdout += self.parse_lte_ml1_scell_meas_response_cell_v60(y, subpkt_body[pos_meas:pos_meas+148])
-                    #         pos_meas += 148
-                    else:
-                        if self.parent:
-                            self.parent.logger.log(logging.WARNING, 'Unknown LTE ML1 Serving Cell Meas Serving Cell Measurement Result subpacket version {}'.format(subpkt_header.version))
-                            self.parent.logger.log(logging.DEBUG, util.xxd(pkt_body))
-                else:
-                    if self.parent:
-                        self.parent.logger.log(logging.WARNING, 'Unknown LTE ML1 Serving Cell Meas subpacket ID 0x{:02x}'.format(subpkt_header.id))
-                        self.parent.logger.log(logging.DEBUG, util.xxd(pkt_body))
-
-            return {'stdout': stdout.rstrip(), 'ts': pkt_ts}
-        else:
-            if self.parent:
-                self.parent.logger.log(logging.WARNING, 'Unknown LTE ML1 Serving Cell Meas Response packet version 0x{:02x}'.format(pkt_version))
-                self.parent.logger.log(logging.DEBUG, util.xxd(pkt_body))
-            return None
+        return None
 
     def parse_lte_ml1_cell_info(self, pkt_header, pkt_body, args):
         pkt_version = pkt_body[0]

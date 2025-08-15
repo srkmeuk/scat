@@ -447,10 +447,14 @@ class QualcommParser:
 
         # 2. Send the packet and read response
         self.io_device.write(packet_to_send)
+        self.logger.log(logging.DEBUG, f"    --> Sent NV Read request for ID {nv_item_id}: {packet_to_send.hex()}")
         response_hdlc = self.io_device.read(0x1000)
 
         if not response_hdlc:
+            self.logger.log(logging.DEBUG, "    <-- Read timed out. No response from device.")
             return None
+
+        self.logger.log(logging.DEBUG, f"    <-- Received raw response data: {response_hdlc.hex()}")
 
         # 3. Parse the response
         # Find the first full HDLC frame in the response buffer

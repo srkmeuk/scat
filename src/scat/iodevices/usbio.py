@@ -16,9 +16,13 @@ class USBIO:
     def read(self, read_size, decode_hdlc = False):
         buf = b''
         try:
-            buf = self.r_handle.read(read_size)
+            # Add a 2-second timeout for robustness, especially for command/response.
+            buf = self.r_handle.read(read_size, timeout=2000)
             buf = bytes(buf)
-        except usb.core.USBError:
+        except usb.core.USBError as e:
+            # 110 is ETIMEDOUT on Linux, a common timeout error.
+            if e.errno == 110:
+                return b'' # Return empty on timeout, don't raise error.
             return b''
         if decode_hdlc:
             buf = util.unwrap(buf)

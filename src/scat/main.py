@@ -226,6 +226,7 @@ def scat_main():
         # Check for the new NV read command
         if args.type == 'qc' and args.read_nv:
             current_parser.init_diag()
+            current_parser.stop_diag()  # Attempt to quiet the modem before reading NV.
             current_parser.read_common_nv_items()
             current_parser.stop_diag()
             sys.exit(0)
@@ -244,7 +245,7 @@ def scat_main():
             else:
                 current_parser.run_diag()
 
-        current_parser.stop_diag()
+            current_parser.stop_diag()
     elif args.dump:
         current_parser.read_dump()
     else:

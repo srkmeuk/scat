@@ -401,6 +401,106 @@ class QualcommParser:
         else:
             self.io_device.write_then_read_discard(util.generate_packet(diagcmd.log_mask_scat_lte(layers=self.layers)), 0x1000, False)
 
+    def read_common_nv_items(self):
+        """Reads a predefined list of common NV items and prints them."""
+        self.logger.log(logging.INFO, 'Attempting to read common NV items...')
+
+        nv_items_to_read = {
+            'IMEI': 550,            # NV_UE_IMEI_I
+            'MEID': 869,            # NV_MEID_I
+            'RF_BC_CONFIG': 1877,   # NV_BC_CONFIG_I (GSM/WCDMA bands)
+            'LTE_BC_CONFIG': 6828,  # NV_RFNV_LTE_BC_CONFIG_I (LTE bands)
+        }
+
+        for name, nv_id in nv_items_to_read.items():
+            self.logger.log(logging.INFO, f"--> Reading NV Item: {name} (ID: {nv_id})")
+            response_payload = self._read_nv_item_diag(nv_id)
+            if response_payload:
+                if nv_id == 550: # Special formatting for IMEI
+                    try:
+                        # Qualcomm IMEI in NV is 8 bytes, BCD encoded.
+                        # The first nibble of the first byte is usually 0xA.
+                        # We will convert the bytes to a hex string and then format it.
+                        imei_hex = response_payload.hex()
+                        # Reverse pairs of characters for all but the first byte
+                        imei_str = imei_hex[1]
+                        for i in range(1, 8):
+                            imei_str += imei_hex[i*2+1] + imei_hex[i*2]
+                        imei_str = imei_str[:15] # Trim to 15 digits
+                        self.logger.log(logging.INFO, f"    SUCCESS: {name} = {imei_str} (from hex: {response_payload.hex()})")
+                    except Exception:
+                        self.logger.log(logging.WARNING, "    Could not parse IMEI BCD format automatically.")
+                        self.logger.log(logging.INFO, f"    SUCCESS: {name} Raw Value (hex): {response_payload.hex()}")
+                else:
+                    self.logger.log(logging.INFO, f"    SUCCESS: {name} Value (hex): {response_payload.hex()}")
+            else:
+                self.logger.log(logging.WARNING, f"    FAILED to read NV Item {nv_id}.")
+
+    def _read_nv_item_diag(self, nv_item_id):
+        """Constructs, sends, and parses a DIAG_NV_READ_F command."""
+        # Clear any pending data from the input buffer
+        self.io_device.read(0x1000)
+
+        # 1. Construct the DIAG request packet
+        payload = struct.pack('<BH', diagcmd.DIAG_NV_READ_F, nv_item_id)
+        packet_to_send = util.generate_packet(payload)
+
+        # 2. Send the packet and read response
+        self.io_device.write(packet_to_send)
+        response_hdlc = self.io_device.read(0x1000)
+
+        if not response_hdlc:
+            return None
+
+        # 3. Parse the response
+        # Find the first full HDLC frame in the response buffer
+        start_idx = response_hdlc.find(b'\x7e')
+        if start_idx == -1: return None
+        end_idx = response_hdlc.find(b'\x7e', start_idx + 1)
+        if end_idx == -1: return None
+
+        frame_payload = response_hdlc[start_idx+1:end_idx]
+
+        # Un-stuff bytes
+        unwrapped = util.unwrap(frame_payload)
+
+        if len(unwrapped) < 5: # Need at least cmd(1), id(2), status(1), crc(2)
+            self.logger.log(logging.DEBUG, f"    Response too short after unwrap: {unwrapped.hex()}")
+            return None
+
+        # Check CRC
+        if self.check_crc:
+            crc_from_pkt = struct.unpack('<H', unwrapped[-2:])[0]
+            calculated_crc = util.dm_crc16(unwrapped[:-2])
+            if calculated_crc != crc_from_pkt:
+                self.logger.log(logging.WARNING, f"    CRC mismatch in NV read response. Expected {hex(calculated_crc)}, got {hex(crc_from_pkt)}")
+                return None
+
+        payload_no_crc = unwrapped[:-2]
+
+        if not payload_no_crc:
+            self.logger.log(logging.DEBUG, "    Empty payload after CRC strip.")
+            return None
+
+        # Check command code
+        if payload_no_crc[0] != diagcmd.DIAG_NV_READ_F:
+            self.logger.log(logging.WARNING, f"    Unexpected command code in response: expected {hex(diagcmd.DIAG_NV_READ_F)}, got {hex(payload_no_crc[0])}")
+            return None
+
+        # Unpack header: cmd_code (B), nv_id (H), status (B)
+        cmd_code, nv_id_resp, status = struct.unpack('<BHB', payload_no_crc[:4])
+
+        if nv_id_resp != nv_item_id:
+            self.logger.log(logging.WARNING, f"    Mismatch in NV item ID. Sent {nv_item_id}, got response for {nv_id_resp}")
+            return None
+
+        if status != 0:
+            self.logger.log(logging.WARNING, f"    Modem returned error status {status} for NV {nv_item_id}")
+            return None
+
+        # Return the actual NV item data
+        return payload_no_crc[4:]
+
     def parse_diag(self, pkt, hdlc_encoded = True, has_crc = True, args = None):
         # Should contain DIAG command and CRC16
         # pkt should not contain trailing 0x7E, and either HDLC encoded or not

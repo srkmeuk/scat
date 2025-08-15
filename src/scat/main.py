@@ -86,6 +86,7 @@ def scat_main():
         qc_group.add_argument('--msgs', action='store_true', help='Decode Extended Message Reports and QSR Message Reports as GSMTAP logging')
         qc_group.add_argument('--cacombos', action='store_true', help='Display raw values of UE CA combo information on 4G/5G (0xB0CD/0xB826)')
         qc_group.add_argument('--disable-crc-check', action='store_true', help='Disable CRC mismatch checks. Improves performance by avoiding CRC calculations.')
+        qc_group.add_argument('--read-nv', help='Read common NV items (IMEI, BC Config, etc.) and exit (Qualcomm only)', action='store_true')
 
     if 'sec' in parser_dict.keys():
         sec_group = parser.add_argument_group('Samsung specific settings')
@@ -222,18 +223,26 @@ def scat_main():
 
     # Run process
     if args.serial or args.usb:
-        current_parser.stop_diag()
-        current_parser.init_diag()
-        current_parser.prepare_diag()
-
-        signal.signal(signal.SIGINT, sigint_handler)
-
-        if not (args.qmdl == None) and args.type == 'qc':
-            current_parser.run_diag(scat.writers.RawWriter(args.qmdl))
-        if not (args.sdmraw == None) and args.type == 'sec':
-            current_parser.run_diag(scat.writers.RawWriter(args.sdmraw))
+        # Check for the new NV read command
+        if args.type == 'qc' and args.read_nv:
+            current_parser.init_diag()
+            current_parser.read_common_nv_items()
+            current_parser.stop_diag()
+            sys.exit(0)
         else:
-            current_parser.run_diag()
+            # Original logging flow
+            current_parser.stop_diag()
+            current_parser.init_diag()
+            current_parser.prepare_diag()
+
+            signal.signal(signal.SIGINT, sigint_handler)
+
+            if not (args.qmdl == None) and args.type == 'qc':
+                current_parser.run_diag(scat.writers.RawWriter(args.qmdl))
+            if not (args.sdmraw == None) and args.type == 'sec':
+                current_parser.run_diag(scat.writers.RawWriter(args.sdmraw))
+            else:
+                current_parser.run_diag()
 
         current_parser.stop_diag()
     elif args.dump:

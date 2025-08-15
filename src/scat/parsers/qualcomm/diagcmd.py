@@ -11,6 +11,7 @@ DIAG_LOG_F                = 0x10 # Log packet Request/Reponse
 DIAG_BAD_CMD_F            = 0x13
 DIAG_DIAG_VER_F           = 0x1c # Version response
 DIAG_TS_F                 = 0x1d
+DIAG_NV_READ_F            = 0x26
 DIAG_SUBSYS_CMD_F         = 0x4b
 DIAG_EVENT_REPORT_F       = 0x60 # Static Event reporting
 DIAG_STATUS_SNAPSHOT_F    = 0x63
@@ -635,4 +636,9 @@ def create_extended_message_config_set_mask(first_ssid, last_ssid, *masks):
     for x in ext_msg_config_levels:
         ext_msg_config_mask_payload += struct.pack('<L', x)
 
-    return diag_log_config_mask_header + ext_msg_config_mask_payload
+    return diag_log_config_mask_header + ext_msg_config_mask_payload```
+---
+### File 2: `main.py`
+I'll add the `--read-nv` argument and the logic to call the new NV reading function instead of the standard log capturing loop.
+
+```python

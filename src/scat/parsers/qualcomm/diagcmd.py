@@ -636,9 +636,4 @@ def create_extended_message_config_set_mask(first_ssid, last_ssid, *masks):
     for x in ext_msg_config_levels:
         ext_msg_config_mask_payload += struct.pack('<L', x)
 
-    return diag_log_config_mask_header + ext_msg_config_mask_payload```
----
-### File 2: `main.py`
-I'll add the `--read-nv` argument and the logic to call the new NV reading function instead of the standard log capturing loop.
-
-```python
+    return diag_log_config_mask_header + ext_msg_config_mask_payload

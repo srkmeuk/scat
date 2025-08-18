@@ -736,92 +736,35 @@ class QualcommParser:
 
     log_header = namedtuple('QcDiagLogHeader', 'cmd_code reserved length1 length2 log_id timestamp')
 
-    def _snprintf(self, fmtstr, fmtargs):
-        # Observed fmt string: {'%02x', '%03d', '%04d', '%04x', '%08x', '%X', '%d', '%ld', '%llx', '%lu', '%u', '%x', '%p'}
-        cfmt = re.compile(r'(%(?:(?:[-+0 #]{0,5})(?:\d+|\*)?(?:\.(?:\d+|\*))?(?:h|l|ll|w|I|I32|I64)?[duxXp])|%%)')
-        cfmt_nums = re.compile(r'%((?:[-+0 #]{0,5})(?:\d+|\*)?(?:\.(?:\d+|\*))?)(?:h|l|ll|w|I|I32|I64)?[duxXp]')
-        fmt_strs = cfmt.findall(fmtstr)
-        formatted_strs = []
-        log_content_pyfmt = cfmt.sub('{}', fmtstr)
-
-        i = 0
-        if len(fmtargs) != len(fmt_strs):
-            log_content_formatted = fmtstr
-        else:
-            for fmt_str in fmt_strs:
-                fmt_num = ''
-                x = cfmt_nums.match(fmt_str)
-                if x:
-                    fmt_num = x.group(1)
-                if fmt_str == '%%':
-                    formatted_strs.append('%')
-                else:
-                    if fmt_str[-1] in ('x', 'X', 'p'):
-                        if fmt_str[-1] == 'p':
-                            pyfmt_str = '{:' + fmt_num + 'x' + '}'
-                        else:
-                            pyfmt_str = '{:' + fmt_num + fmt_str[-1] + '}'
-                        formatted_strs.append(pyfmt_str.format(fmtargs[i]))
-                    elif fmt_str[-1] in ('d'):
-                        pyfmt_str = '{:' + fmt_num + '}'
-                        if fmtargs[i] > 2147483648:
-                            formatted_strs.append(pyfmt_str.format(-(4294967296 - fmtargs[i])))
-                        else:
-                            formatted_strs.append(pyfmt_str.format(fmtargs[i]))
-                    else:
-                        pyfmt_str = '{:' + fmt_num + '}'
-                        formatted_strs.append(pyfmt_str.format(fmtargs[i]))
-                i += 1
-            try:
-                log_content_formatted = log_content_pyfmt.format(*formatted_strs)
-            except:
-                log_content_formatted = fmtstr
-                if len(fmtargs) > 0:
-                    log_content_formatted += ", args="
-                    log_content_formatted += ', '.join(['0x{:x}'.format(x) for x in fmtargs])
-
-        return log_content_formatted
-
-    def parse_diag_version(self, pkt):
-        header = namedtuple('QcDiagVersion', 'compile_date compile_time release_date release_time chipset')
-        if len(pkt) < 47:
-            return None
-        ver_info = header._make(struct.unpack('<11s 8s 11s 8s 8s', pkt[1:47]))
-
-        stdout = 'Compile: {}/{}, Release: {}/{}, Chipset: {}'.format(
-            ver_info.compile_date.decode(errors="backslashreplace"),
-            ver_info.compile_time.decode(errors="backslashreplace"),
-            ver_info.release_date.decode(errors="backslashreplace"),
-            ver_info.release_time.decode(errors="backslashreplace"),
-            ver_info.chipset.decode(errors="backslashreplace"))
-
-        return {'stdout': stdout}
-
     def parse_diag_log(self, pkt, args=None):
-        """Parses the DIAG_LOG_F packet.
-
-        Parameters:
-        pkt (bytes): DIAG_LOG_F data without trailing CRC
-        args (dict): 'radio_id' (int): used SIM or subscription ID on multi-SIM devices
+        """
+        Parses the DIAG_LOG_F packet.
+        Instead of decoding, this now forwards the raw log packet as JSON to stdout.
         """
         if len(pkt) < 16:
-            return
+            return None
 
         pkt_header = self.log_header._make(struct.unpack('<BBHHHQ', pkt[0:16]))
         pkt_body = pkt[16:]
 
         if len(pkt_body) != (pkt_header.length2 - 12):
             self.logger.log(logging.WARNING, "Packet length mismatch: expected {}, got {}".format(pkt_header.length2, len(pkt_body)+12))
+            # Don't discard, some devices seem to have this issue. Continue processing.
 
-        if pkt_header.log_id in self.process.keys():
-            return self.process[pkt_header.log_id](pkt_header, pkt_body, args)
-        elif pkt_header.log_id in self.no_process.keys():
-            #print("Not handling XDM Header 0x%04x (%s)" % (xdm_hdr[1], self.no_process[xdm_hdr[1]]))
-            return None
-        else:
-            #print("Unhandled XDM Header 0x%04x" % xdm_hdr[1])
-            #util.xxd(pkt)
-            return None
+        # Package the raw log data into a JSON object and print to stdout
+        # This will be picked up by the calling process (multi_channel_server.py)
+        raw_log_data = {
+            "type": "scat_raw_log",
+            "log_id": pkt_header.log_id,
+            "payload_hex": pkt_body.hex()
+        }
+        try:
+            print(json.dumps(raw_log_data))
+        except Exception as e:
+            self.logger.log(logging.ERROR, f"Error serializing raw log to JSON: {e}")
+
+        # Return None to prevent further processing by scat's original logic
+        return None
 
     event_header = namedtuple('QcDiagEventHeader', 'cmd_code msg_len')
 

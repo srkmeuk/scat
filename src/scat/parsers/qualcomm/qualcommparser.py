@@ -271,96 +271,129 @@ class QualcommParser:
         else:
             return (radio_id - 1)
 
-    def init_diag(self):
-        self.logger.log(logging.INFO, 'Initializing diag')
-        # Disable static event reporting
-        self.io_device.read(0x1000)
+def init_diag(self):
+    self.logger.log(logging.INFO, 'Initializing diag')
+    # Disable static event reporting
+    self.io_device.read(0x1000)
 
-        self.io_device.write(util.generate_packet(struct.pack('<B', diagcmd.DIAG_VERNO_F)), False)
-        ver_buf = self.io_device.read(0x1000)
-        result = self.parse_diag(ver_buf[:-1])
-        if result:
-            self.postprocess_parse_result(result)
+    self.io_device.write(util.generate_packet(struct.pack('<B', diagcmd.DIAG_VERNO_F)), False)
+    ver_buf = self.io_device.read(0x1000)
+    self.parse_diag(ver_buf[:-1])
 
-        self.io_device.write(util.generate_packet(struct.pack('<B', diagcmd.DIAG_EXT_BUILD_ID_F)), False)
-        build_id_buf = self.io_device.read(0x1000)
-        result = self.parse_diag(build_id_buf[:-1])
-        if result:
-            self.postprocess_parse_result(result)
+    self.io_device.write(util.generate_packet(struct.pack('<B', diagcmd.DIAG_EXT_BUILD_ID_F)), False)
+    build_id_buf = self.io_device.read(0x1000)
+    self.parse_diag(build_id_buf[:-1])
 
-        self.io_device.write_then_read_discard(util.generate_packet(struct.pack('<BB', diagcmd.DIAG_EVENT_REPORT_F, 0x00)), 0x1000, False)
+    self.io_device.write_then_read_discard(util.generate_packet(struct.pack('<BB', diagcmd.DIAG_EVENT_REPORT_F, 0x00)), 0x1000, False)
 
-        self.io_device.write(util.generate_packet(struct.pack('<LL', diagcmd.DIAG_LOG_CONFIG_F, diagcmd.LOG_CONFIG_RETRIEVE_ID_RANGES_OP)), False)
-        log_config_buf = self.io_device.read(0x1000)
-        result = self.parse_diag(log_config_buf[:-1])
-        if result:
-            self.postprocess_parse_result(result)
+    self.io_device.write(util.generate_packet(struct.pack('<LL', diagcmd.DIAG_LOG_CONFIG_F, diagcmd.LOG_CONFIG_RETRIEVE_ID_RANGES_OP)), False)
+    log_config_buf = self.io_device.read(0x1000)
+    result = self.parse_diag(log_config_buf[:-1])
+    if result:
+        self.postprocess_parse_result(result)
 
-        # Send empty masks
-        if diagcmd.DIAG_SUBSYS_ID_1X in self.log_id_range:
-            self.io_device.write_then_read_discard(util.generate_packet(diagcmd.log_mask_empty_1x(self.log_id_range[diagcmd.DIAG_SUBSYS_ID_1X])), 0x1000, False)
-        else:
-            self.io_device.write_then_read_discard(util.generate_packet(diagcmd.log_mask_empty_1x()), 0x1000, False)
-        if diagcmd.DIAG_SUBSYS_ID_WCDMA in self.log_id_range:
-            self.io_device.write_then_read_discard(util.generate_packet(diagcmd.log_mask_empty_wcdma(self.log_id_range[diagcmd.DIAG_SUBSYS_ID_WCDMA])), 0x1000, False)
-        else:
-            self.io_device.write_then_read_discard(util.generate_packet(diagcmd.log_mask_empty_wcdma()), 0x1000, False)
-        if diagcmd.DIAG_SUBSYS_ID_GSM in self.log_id_range:
-            self.io_device.write_then_read_discard(util.generate_packet(diagcmd.log_mask_empty_gsm(self.log_id_range[diagcmd.DIAG_SUBSYS_ID_GSM])), 0x1000, False)
-        else:
-            self.io_device.write_then_read_discard(util.generate_packet(diagcmd.log_mask_empty_gsm()), 0x1000, False)
-        if diagcmd.DIAG_SUBSYS_ID_UMTS in self.log_id_range:
-            self.io_device.write_then_read_discard(util.generate_packet(diagcmd.log_mask_empty_umts(self.log_id_range[diagcmd.DIAG_SUBSYS_ID_UMTS])), 0x1000, False)
-        else:
-            self.io_device.write_then_read_discard(util.generate_packet(diagcmd.log_mask_empty_umts()), 0x1000, False)
-        if diagcmd.DIAG_SUBSYS_ID_DTV in self.log_id_range:
-            self.io_device.write_then_read_discard(util.generate_packet(diagcmd.log_mask_empty_dtv(self.log_id_range[diagcmd.DIAG_SUBSYS_ID_DTV])), 0x1000, False)
-        else:
-            self.io_device.write_then_read_discard(util.generate_packet(diagcmd.log_mask_empty_dtv()), 0x1000, False)
-        if diagcmd.DIAG_SUBSYS_ID_LTE in self.log_id_range:
-            self.io_device.write_then_read_discard(util.generate_packet(diagcmd.log_mask_empty_lte(self.log_id_range[diagcmd.DIAG_SUBSYS_ID_LTE])), 0x1000, False)
-        else:
-            self.io_device.write_then_read_discard(util.generate_packet(diagcmd.log_mask_empty_lte()), 0x1000, False)
-        if diagcmd.DIAG_SUBSYS_ID_TDSCDMA in self.log_id_range:
-            self.io_device.write_then_read_discard(util.generate_packet(diagcmd.log_mask_empty_tdscdma(self.log_id_range[diagcmd.DIAG_SUBSYS_ID_TDSCDMA])), 0x1000, False)
-        else:
-            self.io_device.write_then_read_discard(util.generate_packet(diagcmd.log_mask_empty_tdscdma()), 0x1000, False)
+    # Send empty masks
+    if diagcmd.DIAG_SUBSYS_ID_1X in self.log_id_range:
+        self.io_device.write_then_read_discard(util.generate_packet(diagcmd.log_mask_empty_1x(self.log_id_range[diagcmd.DIAG_SUBSYS_ID_1X])), 0x1000, False)
+    else:
+        self.io_device.write_then_read_discard(util.generate_packet(diagcmd.log_mask_empty_1x()), 0x1000, False)
+    if diagcmd.DIAG_SUBSYS_ID_WCDMA in self.log_id_range:
+        self.io_device.write_then_read_discard(util.generate_packet(diagcmd.log_mask_empty_wcdma(self.log_id_range[diagcmd.DIAG_SUBSYS_ID_WCDMA])), 0x1000, False)
+    else:
+        self.io_device.write_then_read_discard(util.generate_packet(diagcmd.log_mask_empty_wcdma()), 0x1000, False)
+    if diagcmd.DIAG_SUBSYS_ID_GSM in self.log_id_range:
+        self.io_device.write_then_read_discard(util.generate_packet(diagcmd.log_mask_empty_gsm(self.log_id_range[diagcmd.DIAG_SUBSYS_ID_GSM])), 0x1000, False)
+    else:
+        self.io_device.write_then_read_discard(util.generate_packet(diagcmd.log_mask_empty_gsm()), 0x1000, False)
+    if diagcmd.DIAG_SUBSYS_ID_UMTS in self.log_id_range:
+        self.io_device.write_then_read_discard(util.generate_packet(diagcmd.log_mask_empty_umts(self.log_id_range[diagcmd.DIAG_SUBSYS_ID_UMTS])), 0x1000, False)
+    else:
+        self.io_device.write_then_read_discard(util.generate_packet(diagcmd.log_mask_empty_umts()), 0x1000, False)
+    if diagcmd.DIAG_SUBSYS_ID_DTV in self.log_id_range:
+        self.io_device.write_then_read_discard(util.generate_packet(diagcmd.log_mask_empty_dtv(self.log_id_range[diagcmd.DIAG_SUBSYS_ID_DTV])), 0x1000, False)
+    else:
+        self.io_device.write_then_read_discard(util.generate_packet(diagcmd.log_mask_empty_dtv()), 0x1000, False)
+    if diagcmd.DIAG_SUBSYS_ID_LTE in self.log_id_range:
+        self.io_device.write_then_read_discard(util.generate_packet(diagcmd.log_mask_empty_lte(self.log_id_range[diagcmd.DIAG_SUBSYS_ID_LTE])), 0x1000, False)
+    else:
+        self.io_device.write_then_read_discard(util.generate_packet(diagcmd.log_mask_empty_lte()), 0x1000, False)
+    if diagcmd.DIAG_SUBSYS_ID_TDSCDMA in self.log_id_range:
+        self.io_device.write_then_read_discard(util.generate_packet(diagcmd.log_mask_empty_tdscdma(self.log_id_range[diagcmd.DIAG_SUBSYS_ID_TDSCDMA])), 0x1000, False)
+    else:
+        self.io_device.write_then_read_discard(util.generate_packet(diagcmd.log_mask_empty_tdscdma()), 0x1000, False)
 
-        self.io_device.write(util.generate_packet(struct.pack('<BB', diagcmd.DIAG_EXT_MSG_CONFIG_F, 0x01)), False)
-        ext_msg_buf = self.io_device.read(0x1000)
-        result = self.parse_diag(ext_msg_buf[:-1])
-        if result:
-            self.postprocess_parse_result(result)
+    self.io_device.write(util.generate_packet(struct.pack('<BB', diagcmd.DIAG_EXT_MSG_CONFIG_F, 0x01)), False)
+    ext_msg_buf = self.io_device.read(0x1000)
+    result = self.parse_diag(ext_msg_buf[:-1])
+    if result:
+        self.postprocess_parse_result(result)
 
-        emr = lambda x, y: diagcmd.create_extended_message_config_set_mask(x, y)
-        if 'id_range' in result:
-            self.emr_id_range = result['id_range']
-            for x in result['id_range']:
-                self.io_device.write_then_read_discard(util.generate_packet(emr(x[0], x[1])), 0x1000, False)
-        else:
-            self.io_device.write_then_read_discard(util.generate_packet(emr(0x0000, 0x0065)), 0x1000, False)
-            self.io_device.write_then_read_discard(util.generate_packet(emr(0x01f4, 0x01fa)), 0x1000, False)
-            self.io_device.write_then_read_discard(util.generate_packet(emr(0x03e8, 0x033f)), 0x1000, False)
-            self.io_device.write_then_read_discard(util.generate_packet(emr(0x07d0, 0x07d8)), 0x1000, False)
-            self.io_device.write_then_read_discard(util.generate_packet(emr(0x0bb8, 0x0bc6)), 0x1000, False)
-            self.io_device.write_then_read_discard(util.generate_packet(emr(0x0fa0, 0x0faa)), 0x1000, False)
-            self.io_device.write_then_read_discard(util.generate_packet(emr(0x1194, 0x11ae)), 0x1000, False)
-            self.io_device.write_then_read_discard(util.generate_packet(emr(0x11f8, 0x1206)), 0x1000, False)
-            self.io_device.write_then_read_discard(util.generate_packet(emr(0x1388, 0x13a6)), 0x1000, False)
-            self.io_device.write_then_read_discard(util.generate_packet(emr(0x157c, 0x158c)), 0x1000, False)
-            self.io_device.write_then_read_discard(util.generate_packet(emr(0x1770, 0x17c0)), 0x1000, False)
-            self.io_device.write_then_read_discard(util.generate_packet(emr(0x1964, 0x1979)), 0x1000, False)
-            self.io_device.write_then_read_discard(util.generate_packet(emr(0x1b58, 0x1b5b)), 0x1000, False)
-            self.io_device.write_then_read_discard(util.generate_packet(emr(0x1bbc, 0x1bc7)), 0x1000, False)
-            self.io_device.write_then_read_discard(util.generate_packet(emr(0x1c20, 0x1c21)), 0x1000, False)
-            self.io_device.write_then_read_discard(util.generate_packet(emr(0x1f40, 0x1f40)), 0x1000, False)
-            self.io_device.write_then_read_discard(util.generate_packet(emr(0x2134, 0x214c)), 0x1000, False)
-            self.io_device.write_then_read_discard(util.generate_packet(emr(0x2328, 0x2330)), 0x1000, False)
-            self.io_device.write_then_read_discard(util.generate_packet(emr(0x251c, 0x2525)), 0x1000, False)
-            self.io_device.write_then_read_discard(util.generate_packet(emr(0x27d8, 0x27e2)), 0x1000, False)
-            self.io_device.write_then_read_discard(util.generate_packet(emr(0x280b, 0x280f)), 0x1000, False)
-            self.io_device.write_then_read_discard(util.generate_packet(emr(0x283c, 0x283c)), 0x1000, False)
-            self.io_device.write_then_read_discard(util.generate_packet(emr(0x286e, 0x2886)), 0x1000, False)
+    emr = lambda x, y: diagcmd.create_extended_message_config_set_mask(x, y)
+    if result and 'id_range' in result:
+        self.emr_id_range = result['id_range']
+        for x in result['id_range']:
+            self.io_device.write_then_read_discard(util.generate_packet(emr(x[0], x[1])), 0x1000, False)
+    else:
+        self.io_device.write_then_read_discard(util.generate_packet(emr(0x0000, 0x0065)), 0x1000, False)
+        self.io_device.write_then_read_discard(util.generate_packet(emr(0x01f4, 0x01fa)), 0x1000, False)
+        self.io_device.write_then_read_discard(util.generate_packet(emr(0x03e8, 0x033f)), 0x1000, False)
+        self.io_device.write_then_read_discard(util.generate_packet(emr(0x07d0, 0x07d8)), 0x1000, False)
+        self.io_device.write_then_read_discard(util.generate_packet(emr(0x0bb8, 0x0bc6)), 0x1000, False)
+        self.io_device.write_then_read_discard(util.generate_packet(emr(0x0fa0, 0x0faa)), 0x1000, False)
+        self.io_device.write_then_read_discard(util.generate_packet(emr(0x1194, 0x11ae)), 0x1000, False)
+        self.io_device.write_then_read_discard(util.generate_packet(emr(0x11f8, 0x1206)), 0x1000, False)
+        self.io_device.write_then_read_discard(util.generate_packet(emr(0x1388, 0x13a6)), 0x1000, False)
+        self.io_device.write_then_read_discard(util.generate_packet(emr(0x157c, 0x158c)), 0x1000, False)
+        self.io_device.write_then_read_discard(util.generate_packet(emr(0x1770, 0x17c0)), 0x1000, False)
+        self.io_device.write_then_read_discard(util.generate_packet(emr(0x1964, 0x1979)), 0x1000, False)
+        self.io_device.write_then_read_discard(util.generate_packet(emr(0x1b58, 0x1b5b)), 0x1000, False)
+        self.io_device.write_then_read_discard(util.generate_packet(emr(0x1bbc, 0x1bc7)), 0x1000, False)
+        self.io_device.write_then_read_discard(util.generate_packet(emr(0x1c20, 0x1c21)), 0x1000, False)
+        self.io_device.write_then_read_discard(util.generate_packet(emr(0x1f40, 0x1f40)), 0x1000, False)
+        self.io_device.write_then_read_discard(util.generate_packet(emr(0x2134, 0x214c)), 0x1000, False)
+        self.io_device.write_then_read_discard(util.generate_packet(emr(0x2328, 0x2330)), 0x1000, False)
+        self.io_device.write_then_read_discard(util.generate_packet(emr(0x251c, 0x2525)), 0x1000, False)
+        self.io_device.write_then_read_discard(util.generate_packet(emr(0x27d8, 0x27e2)), 0x1000, False)
+        self.io_device.write_then_read_discard(util.generate_packet(emr(0x280b, 0x280f)), 0x1000, False)
+        self.io_device.write_then_read_discard(util.generate_packet(emr(0x283c, 0x283c)), 0x1000, False)
+        self.io_device.write_then_read_discard(util.generate_packet(emr(0x286e, 0x2886)), 0x1000, False)
+
+def parse_diag_log_config(self, pkt):
+    if len(pkt) < 8:
+        return None
+    header = namedtuple('QcDiagLogConfig', 'pkt_id cmd_id')
+    header_val = header._make(struct.unpack('<LL', pkt[0:8]))
+    payload = pkt[8:]
+    stdout = 'Log Config: '
+
+    if header_val.cmd_id == diagcmd.LOG_CONFIG_DISABLE_OP:
+        stdout += 'Disable'
+        stdout += ', Extra: {}'.format(binascii.hexlify(payload).decode())
+    elif header_val.cmd_id == diagcmd.LOG_CONFIG_RETRIEVE_ID_RANGES_OP:
+        stdout += 'Retrieve ID ranges: '
+        ranges = payload[4:]
+        num_ranges = int(len(ranges)/4)
+        for i in range(num_ranges):
+            val = struct.unpack('<L', ranges[4*i:4*(i+1)])[0]
+            if val > 0:
+                stdout += '{}: {}, '.format(i, val)
+                self.log_id_range[i] = val
+    elif header_val.cmd_id == diagcmd.LOG_CONFIG_RETRIEVE_VALID_MASK_OP:
+        stdout += 'Retrieve valid mask'
+        stdout += ', Extra: {}'.format(binascii.hexlify(payload).decode())
+    elif header_val.cmd_id == diagcmd.LOG_CONFIG_SET_MASK_OP:
+        stdout += 'Set mask'
+        stdout += ', Extra: {}'.format(binascii.hexlify(payload).decode())
+    elif header_val.cmd_id == diagcmd.LOG_CONFIG_GET_LOGMASK_OP:
+        stdout += 'Get mask'
+        stdout += ', Extra: {}'.format(binascii.hexlify(payload).decode())
+
+    # This is a command response, not a log packet. We don't want to forward it.
+    # But we still need the side-effect of populating self.log_id_range.
+    # The original code returned a dict with 'stdout' which was then printed.
+    # In the new model, we just log it to scat's stdout for debugging.
+    print(stdout)
+    return None
 
     def prepare_diag(self):
         self.logger.log(logging.INFO, 'Starting diag')

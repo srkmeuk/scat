@@ -1,3 +1,6 @@
+# class name: qualcommparser.py
+# class path: /Users/seb/Documents/git/myscat/src/scat/parsers/qualcomm/qualcommparser.py
+# action: update
 #!/usr/bin/env python3
 # coding: utf8
 # SPDX-License-Identifier: GPL-2.0-or-later
@@ -528,31 +531,16 @@ class QualcommParser:
                     self.logger.log(logging.DEBUG, util.xxd(pkt))
             pkt = pkt[:-2]
 
-        if pkt[0] == diagcmd.DIAG_VERNO_F:
-            return self.parse_diag_version(pkt)
-        elif pkt[0] == diagcmd.DIAG_LOG_F:
+        # In the new architecture, we only care about forwarding DIAG_LOG_F packets.
+        # We ignore all other DIAG command responses (like version, build_id, config acks)
+        # to prevent crashes from missing parser methods during initialization.
+        if pkt[0] == diagcmd.DIAG_LOG_F:
             return self.parse_diag_log(pkt, args)
-        elif pkt[0] == diagcmd.DIAG_EVENT_REPORT_F and self.parse_events:
-            return self.parse_diag_event(pkt)
-        elif pkt[0] == diagcmd.DIAG_LOG_CONFIG_F:
-            return self.parse_diag_log_config(pkt)
-        elif pkt[0] == diagcmd.DIAG_EXT_MSG_F and self.parse_msgs:
-            return self.parse_diag_ext_msg(pkt)
-        elif pkt[0] == diagcmd.DIAG_EXT_BUILD_ID_F:
-            return self.parse_diag_ext_build_id(pkt)
-        elif pkt[0] == diagcmd.DIAG_EXT_MSG_CONFIG_F:
-            return self.parse_diag_ext_msg_config(pkt)
-        elif pkt[0] == diagcmd.DIAG_QSR_EXT_MSG_TERSE_F and self.parse_msgs:
-            return self.parse_diag_qsr_ext_msg(pkt)
         elif pkt[0] == diagcmd.DIAG_MULTI_RADIO_CMD_F:
+            # We still need to handle this as it's a wrapper for other packets.
             return self.parse_diag_multisim(pkt)
-        elif pkt[0] == diagcmd.DIAG_QSR4_EXT_MSG_TERSE_F and self.parse_msgs:
-            return self.parse_diag_qsr4_ext_msg(pkt)
-        elif pkt[0] == diagcmd.DIAG_QSH_TRACE_PAYLOAD_F and self.parse_msgs:
-            return self.parse_diag_qsh_trace_msg(pkt)
         else:
-            self.logger.log(logging.DEBUG, 'Not parsing DIAG command {:#02x}'.format(pkt[0]))
-            self.logger.log(logging.DEBUG, util.xxd(pkt))
+            self.logger.log(logging.DEBUG, 'Ignoring DIAG command {:#02x} in raw forwarding mode'.format(pkt[0]))
             return None
 
     def run_diag(self, writer_qmdl = None):
@@ -736,10 +724,71 @@ class QualcommParser:
 
     log_header = namedtuple('QcDiagLogHeader', 'cmd_code reserved length1 length2 log_id timestamp')
 
+    def _snprintf(self, fmtstr, fmtargs):
+        # Observed fmt string: {'%02x', '%03d', '%04d', '%04x', '%08x', '%X', '%d', '%ld', '%llx', '%lu', '%u', '%x', '%p'}
+        cfmt = re.compile(r'(%(?:(?:[-+0 #]{0,5})(?:\d+|\*)?(?:\.(?:\d+|\*))?(?:h|l|ll|w|I|I32|I64)?[duxXp])|%%)')
+        cfmt_nums = re.compile(r'%((?:[-+0 #]{0,5})(?:\d+|\*)?(?:\.(?:\d+|\*))?)(?:h|l|ll|w|I|I32|I64)?[duxXp]')
+        fmt_strs = cfmt.findall(fmtstr)
+        formatted_strs = []
+        log_content_pyfmt = cfmt.sub('{}', fmtstr)
+
+        i = 0
+        if len(fmtargs) != len(fmt_strs):
+            log_content_formatted = fmtstr
+        else:
+            for fmt_str in fmt_strs:
+                fmt_num = ''
+                x = cfmt_nums.match(fmt_str)
+                if x:
+                    fmt_num = x.group(1)
+                if fmt_str == '%%':
+                    formatted_strs.append('%')
+                else:
+                    if fmt_str[-1] in ('x', 'X', 'p'):
+                        if fmt_str[-1] == 'p':
+                            pyfmt_str = '{:' + fmt_num + 'x' + '}'
+                        else:
+                            pyfmt_str = '{:' + fmt_num + fmt_str[-1] + '}'
+                        formatted_strs.append(pyfmt_str.format(fmtargs[i]))
+                    elif fmt_str[-1] in ('d'):
+                        pyfmt_str = '{:' + fmt_num + '}'
+                        if fmtargs[i] > 2147483648:
+                            formatted_strs.append(pyfmt_str.format(-(4294967296 - fmtargs[i])))
+                        else:
+                            formatted_strs.append(pyfmt_str.format(fmtargs[i]))
+                    else:
+                        pyfmt_str = '{:' + fmt_num + '}'
+                        formatted_strs.append(pyfmt_str.format(fmtargs[i]))
+                i += 1
+            try:
+                log_content_formatted = log_content_pyfmt.format(*formatted_strs)
+            except:
+                log_content_formatted = fmtstr
+                if len(fmtargs) > 0:
+                    log_content_formatted += ", args="
+                    log_content_formatted += ', '.join(['0x{:x}'.format(x) for x in fmtargs])
+
+        return log_content_formatted
+
+    def parse_diag_version(self, pkt):
+        header = namedtuple('QcDiagVersion', 'compile_date compile_time release_date release_time chipset')
+        if len(pkt) < 47:
+            return None
+        ver_info = header._make(struct.unpack('<11s 8s 11s 8s 8s', pkt[1:47]))
+
+        stdout = 'Compile: {}/{}, Release: {}/{}, Chipset: {}'.format(
+            ver_info.compile_date.decode(errors="backslashreplace"),
+            ver_info.compile_time.decode(errors="backslashreplace"),
+            ver_info.release_date.decode(errors="backslashreplace"),
+            ver_info.release_time.decode(errors="backslashreplace"),
+            ver_info.chipset.decode(errors="backslashreplace"))
+
+        return {'stdout': stdout}
+
     def parse_diag_log(self, pkt, args=None):
         """
-        Parses the DIAG_LOG_F packet.
-        Instead of decoding, this now forwards the raw log packet as JSON to stdout.
+Parses the DIAG_LOG_F packet.
+Instead of decoding, this now forwards the raw log packet as JSON to stdout.
         """
         if len(pkt) < 16:
             return None
@@ -759,11 +808,12 @@ class QualcommParser:
             "payload_hex": pkt_body.hex()
         }
         try:
+            # The output of this print is captured by the server
             print(json.dumps(raw_log_data))
         except Exception as e:
             self.logger.log(logging.ERROR, f"Error serializing raw log to JSON: {e}")
 
-        # Return None to prevent further processing by scat's original logic
+        # Return None to prevent further processing by scat's original GSMTAP writer logic
         return None
 
     event_header = namedtuple('QcDiagEventHeader', 'cmd_code msg_len')
@@ -771,8 +821,8 @@ class QualcommParser:
     def parse_diag_event(self, pkt):
         """Parses the DIAG_EVENT_REPORT_F packet.
 
-        Parameters:
-        pkt (bytes): DIAG_EVENT_REPORT_F data without trailing CRC
+Parameters:
+pkt (bytes): DIAG_EVENT_REPORT_F data without trailing CRC
         """
         pkt_header = self.event_header._make(struct.unpack('<BH', pkt[0:3]))
 
@@ -879,8 +929,8 @@ class QualcommParser:
     def parse_diag_ext_msg(self, pkt):
         """Parses the DIAG_EXT_MSG_F packet.
 
-        Parameters:
-        pkt (bytes): DIAG_EXT_MSG_F data without trailing CRC
+Parameters:
+pkt (bytes): DIAG_EXT_MSG_F data without trailing CRC
         """
         # 79 | 00 | 00 | 00 | 00 00 1c fc 0f 16 e4 00 | e6 04 | 94 13 | 02 00 00 00
         # cmd_code, ts_type, num_args, drop_cnt, TS, Line number, Message subsystem ID, ?
@@ -971,8 +1021,8 @@ class QualcommParser:
     def parse_diag_multisim(self, pkt):
         """Parses the DIAG_MULTI_RADIO_CMD_F packet. This function calls nexted DIAG log packet with correct radio ID attached.
 
-        Parameters:
-        pkt (bytes): DIAG_MULTI_RADIO_CMD_F data without trailing CRC
+Parameters:
+pkt (bytes): DIAG_MULTI_RADIO_CMD_F data without trailing CRC
         """
         # 98 | 01 | 00 00 | 01 00 00 00 -> Subscription ID=1
         # 98 | 01 | 00 00 | 02 00 00 00 -> Subscription ID=2

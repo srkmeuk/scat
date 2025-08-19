@@ -79,6 +79,7 @@ class QualcommParser:
         self.layers = []
         self.display_format = 'x'
         self.gsmtapv3 = False
+        self.verbose_parse = False
 
         self.qsr4_content = {}
         self.qsr4_mtrace_content = {}
@@ -255,6 +256,9 @@ class QualcommParser:
                 self.display_format = params[p]
             elif p == 'gsmtapv3':
                 self.gsmtapv3 = params[p]
+            elif p == 'verbose-parse':
+                self.verbose_parse = params[p]
+
 
         if qsr_hash_loaded:
             self.parse_msgs = True
@@ -275,19 +279,19 @@ class QualcommParser:
 
         self.io_device.write(util.generate_packet(struct.pack('<B', diagcmd.DIAG_VERNO_F)), False)
         ver_buf = self.io_device.read(0x1000)
-        self.parse_diag(ver_buf[:-1])
+        # self.parse_diag(ver_buf[:-1])
 
         self.io_device.write(util.generate_packet(struct.pack('<B', diagcmd.DIAG_EXT_BUILD_ID_F)), False)
         build_id_buf = self.io_device.read(0x1000)
-        self.parse_diag(build_id_buf[:-1])
+        # self.parse_diag(build_id_buf[:-1])
 
         self.io_device.write_then_read_discard(util.generate_packet(struct.pack('<BB', diagcmd.DIAG_EVENT_REPORT_F, 0x00)), 0x1000, False)
 
         self.io_device.write(util.generate_packet(struct.pack('<LL', diagcmd.DIAG_LOG_CONFIG_F, diagcmd.LOG_CONFIG_RETRIEVE_ID_RANGES_OP)), False)
         log_config_buf = self.io_device.read(0x1000)
-        result = self.parse_diag(log_config_buf[:-1])
-        if result:
-            self.postprocess_parse_result(result)
+        # result = self.parse_diag(log_config_buf[:-1])
+        # if result:
+        #     self.postprocess_parse_result(result)
 
         # Send empty masks
         if diagcmd.DIAG_SUBSYS_ID_1X in self.log_id_range:
@@ -321,39 +325,39 @@ class QualcommParser:
 
         self.io_device.write(util.generate_packet(struct.pack('<BB', diagcmd.DIAG_EXT_MSG_CONFIG_F, 0x01)), False)
         ext_msg_buf = self.io_device.read(0x1000)
-        result = self.parse_diag(ext_msg_buf[:-1])
-        if result:
-            self.postprocess_parse_result(result)
+        # result = self.parse_diag(ext_msg_buf[:-1])
+        # if result:
+        #     self.postprocess_parse_result(result)
 
         emr = lambda x, y: diagcmd.create_extended_message_config_set_mask(x, y)
-        if result and 'id_range' in result:
-            self.emr_id_range = result['id_range']
-            for x in result['id_range']:
-                self.io_device.write_then_read_discard(util.generate_packet(emr(x[0], x[1])), 0x1000, False)
-        else:
-            self.io_device.write_then_read_discard(util.generate_packet(emr(0x0000, 0x0065)), 0x1000, False)
-            self.io_device.write_then_read_discard(util.generate_packet(emr(0x01f4, 0x01fa)), 0x1000, False)
-            self.io_device.write_then_read_discard(util.generate_packet(emr(0x03e8, 0x033f)), 0x1000, False)
-            self.io_device.write_then_read_discard(util.generate_packet(emr(0x07d0, 0x07d8)), 0x1000, False)
-            self.io_device.write_then_read_discard(util.generate_packet(emr(0x0bb8, 0x0bc6)), 0x1000, False)
-            self.io_device.write_then_read_discard(util.generate_packet(emr(0x0fa0, 0x0faa)), 0x1000, False)
-            self.io_device.write_then_read_discard(util.generate_packet(emr(0x1194, 0x11ae)), 0x1000, False)
-            self.io_device.write_then_read_discard(util.generate_packet(emr(0x11f8, 0x1206)), 0x1000, False)
-            self.io_device.write_then_read_discard(util.generate_packet(emr(0x1388, 0x13a6)), 0x1000, False)
-            self.io_device.write_then_read_discard(util.generate_packet(emr(0x157c, 0x158c)), 0x1000, False)
-            self.io_device.write_then_read_discard(util.generate_packet(emr(0x1770, 0x17c0)), 0x1000, False)
-            self.io_device.write_then_read_discard(util.generate_packet(emr(0x1964, 0x1979)), 0x1000, False)
-            self.io_device.write_then_read_discard(util.generate_packet(emr(0x1b58, 0x1b5b)), 0x1000, False)
-            self.io_device.write_then_read_discard(util.generate_packet(emr(0x1bbc, 0x1bc7)), 0x1000, False)
-            self.io_device.write_then_read_discard(util.generate_packet(emr(0x1c20, 0x1c21)), 0x1000, False)
-            self.io_device.write_then_read_discard(util.generate_packet(emr(0x1f40, 0x1f40)), 0x1000, False)
-            self.io_device.write_then_read_discard(util.generate_packet(emr(0x2134, 0x214c)), 0x1000, False)
-            self.io_device.write_then_read_discard(util.generate_packet(emr(0x2328, 0x2330)), 0x1000, False)
-            self.io_device.write_then_read_discard(util.generate_packet(emr(0x251c, 0x2525)), 0x1000, False)
-            self.io_device.write_then_read_discard(util.generate_packet(emr(0x27d8, 0x27e2)), 0x1000, False)
-            self.io_device.write_then_read_discard(util.generate_packet(emr(0x280b, 0x280f)), 0x1000, False)
-            self.io_device.write_then_read_discard(util.generate_packet(emr(0x283c, 0x283c)), 0x1000, False)
-            self.io_device.write_then_read_discard(util.generate_packet(emr(0x286e, 0x2886)), 0x1000, False)
+        # if result and 'id_range' in result:
+        #     self.emr_id_range = result['id_range']
+        #     for x in result['id_range']:
+        #         self.io_device.write_then_read_discard(util.generate_packet(emr(x[0], x[1])), 0x1000, False)
+        # else:
+        self.io_device.write_then_read_discard(util.generate_packet(emr(0x0000, 0x0065)), 0x1000, False)
+        self.io_device.write_then_read_discard(util.generate_packet(emr(0x01f4, 0x01fa)), 0x1000, False)
+        self.io_device.write_then_read_discard(util.generate_packet(emr(0x03e8, 0x033f)), 0x1000, False)
+        self.io_device.write_then_read_discard(util.generate_packet(emr(0x07d0, 0x07d8)), 0x1000, False)
+        self.io_device.write_then_read_discard(util.generate_packet(emr(0x0bb8, 0x0bc6)), 0x1000, False)
+        self.io_device.write_then_read_discard(util.generate_packet(emr(0x0fa0, 0x0faa)), 0x1000, False)
+        self.io_device.write_then_read_discard(util.generate_packet(emr(0x1194, 0x11ae)), 0x1000, False)
+        self.io_device.write_then_read_discard(util.generate_packet(emr(0x11f8, 0x1206)), 0x1000, False)
+        self.io_device.write_then_read_discard(util.generate_packet(emr(0x1388, 0x13a6)), 0x1000, False)
+        self.io_device.write_then_read_discard(util.generate_packet(emr(0x157c, 0x158c)), 0x1000, False)
+        self.io_device.write_then_read_discard(util.generate_packet(emr(0x1770, 0x17c0)), 0x1000, False)
+        self.io_device.write_then_read_discard(util.generate_packet(emr(0x1964, 0x1979)), 0x1000, False)
+        self.io_device.write_then_read_discard(util.generate_packet(emr(0x1b58, 0x1b5b)), 0x1000, False)
+        self.io_device.write_then_read_discard(util.generate_packet(emr(0x1bbc, 0x1bc7)), 0x1000, False)
+        self.io_device.write_then_read_discard(util.generate_packet(emr(0x1c20, 0x1c21)), 0x1000, False)
+        self.io_device.write_then_read_discard(util.generate_packet(emr(0x1f40, 0x1f40)), 0x1000, False)
+        self.io_device.write_then_read_discard(util.generate_packet(emr(0x2134, 0x214c)), 0x1000, False)
+        self.io_device.write_then_read_discard(util.generate_packet(emr(0x2328, 0x2330)), 0x1000, False)
+        self.io_device.write_then_read_discard(util.generate_packet(emr(0x251c, 0x2525)), 0x1000, False)
+        self.io_device.write_then_read_discard(util.generate_packet(emr(0x27d8, 0x27e2)), 0x1000, False)
+        self.io_device.write_then_read_discard(util.generate_packet(emr(0x280b, 0x280f)), 0x1000, False)
+        self.io_device.write_then_read_discard(util.generate_packet(emr(0x283c, 0x283c)), 0x1000, False)
+        self.io_device.write_then_read_discard(util.generate_packet(emr(0x286e, 0x2889)), 0x1000, False)
 
     def prepare_diag(self):
         self.logger.log(logging.INFO, 'Starting diag')
@@ -502,52 +506,30 @@ class QualcommParser:
         return payload_no_crc[4:]
 
     def parse_diag(self, pkt, hdlc_encoded = True, has_crc = True, args = None):
-        # MODIFICATION: This method is no longer called by the main run_diag loop.
-        # The logic for HDLC unwrapping and CRC checking has been offloaded to the
-        # Android client application to reduce CPU load on the host machine (e.g., Raspberry Pi).
-        # The original code is left here for reference.
-        #
-        # # Should contain DIAG command and CRC16
-        # # pkt should not contain trailing 0x7E, and either HDLC encoded or not
-        # # When the pkt is not HDLC encoded, hdlc_encoded should be set to True
-        # # radio_id = 0 for default, larger than 1 for SIM 1 and such
-        #
-        # if len(pkt) < 3:
-        #     return
-        #
-        # if hdlc_encoded:
-        #     pkt = util.unwrap(pkt)
-        #
-        # # Check and strip CRC if existing
-        # if has_crc:
-        #     # Check CRC only if check_crc is enabled
-        #     if self.check_crc:
-        #         crc = util.dm_crc16(pkt[:-2])
-        #         crc_pkt = (pkt[-1] << 8) | pkt[-2]
-        #         if crc != crc_pkt:
-        #             self.logger.log(logging.WARNING, "CRC mismatch: expected 0x{:04x}, got 0x{:04x}".format(crc, crc_pkt))
-        #             self.logger.log(logging.DEBUG, util.xxd(pkt))
-        #     pkt = pkt[:-2]
-        #
-        # # In the new architecture, we only care about forwarding DIAG_LOG_F packets.
-        # # We ignore all other DIAG command responses (like version, build_id, config acks)
-        # # to prevent crashes from missing parser methods during initialization.
-        # if pkt[0] == diagcmd.DIAG_LOG_F:
-        #     return self.parse_diag_log(pkt, args)
-        # elif pkt[0] == diagcmd.DIAG_MULTI_RADIO_CMD_F:
-        #     # We still need to handle this as it's a wrapper for other packets.
-        #     return self.parse_diag_multisim(pkt)
-        # else:
-        #     self.logger.log(logging.DEBUG, 'Ignoring DIAG command {:#02x} in raw forwarding mode'.format(pkt[0]))
-        #     return None
+        if len(pkt) < 3:
+            return
+
+        if hdlc_encoded:
+            pkt = util.unwrap(pkt)
+
+        if has_crc:
+            if self.check_crc:
+                crc = util.dm_crc16(pkt[:-2])
+                crc_pkt = (pkt[-1] << 8) | pkt[-2]
+                if crc != crc_pkt:
+                    self.logger.log(logging.WARNING, "CRC mismatch: expected 0x{:04x}, got 0x{:04x}".format(crc, crc_pkt))
+                    self.logger.log(logging.DEBUG, util.xxd(pkt))
+            pkt = pkt[:-2]
+
+        if pkt[0] == diagcmd.DIAG_LOG_F:
+            return self.parse_diag_log(pkt, args)
+        elif pkt[0] == diagcmd.DIAG_MULTI_RADIO_CMD_F:
+            return self.parse_diag_multisim(pkt)
+        # We ignore other packet types in verbose mode to focus on logs
         return None
 
+
     def run_diag(self, writer_qmdl = None):
-        # MODIFICATION: This function has been heavily simplified.
-        # It no longer parses DIAG packets. Instead, it reads raw HDLC frames
-        # from the device and prints them to stdout as hex strings.
-        # The Android application is now responsible for HDLC unwrapping,
-        # CRC checking, and all subsequent parsing.
         oldbuf = b''
         loop = True
         try:
@@ -559,10 +541,8 @@ class QualcommParser:
                     else:
                         loop = False
                 buf = oldbuf + buf
-                # Split by the HDLC frame delimiter 0x7e
                 buf_atom = buf.split(b'\x7e')
 
-                # If the buffer doesn't end with 0x7e, the last part is an incomplete frame.
                 if len(buf) < 1 or buf[-1] != 0x7e:
                     oldbuf = buf_atom.pop()
                 else:
@@ -571,16 +551,20 @@ class QualcommParser:
                 for pkt in buf_atom:
                     if len(pkt) == 0:
                         continue
-
-                    # Re-add the delimiters to form a complete HDLC frame
-                    full_frame = b'\x7e' + pkt + b'\x7e'
-
-                    # Output the raw frame as a hex string to stdout.
-                    # This is captured by the server script and forwarded to the app.
-                    print(full_frame.hex())
-                    sys.stdout.flush()
+                    
+                    if not self.verbose_parse:
+                        # Raw hex output mode
+                        full_frame = b'\x7e' + pkt + b'\x7e'
+                        print(full_frame.hex())
+                        sys.stdout.flush()
+                    else:
+                        # Verbose parsing mode
+                        parse_result = self.parse_diag(pkt)
+                        if parse_result is not None:
+                            self.postprocess_parse_result(parse_result)
 
                     if writer_qmdl:
+                        full_frame = b'\x7e' + pkt + b'\x7e'
                         writer_qmdl.write_cp(full_frame)
 
         except KeyboardInterrupt:
@@ -689,9 +673,10 @@ class QualcommParser:
         else:
             ts = datetime.datetime.now()
 
-        if 'json_out' in parse_result:
-            print(json.dumps(parse_result['json_out']))
-            return
+        # In verbose parse mode, we don't output JSON.
+        # if 'json_out' in parse_result:
+        #     print(json.dumps(parse_result['json_out']))
+        #     return
 
         if 'cp' in parse_result:
             if 'layer' in parse_result:
@@ -781,42 +766,24 @@ class QualcommParser:
         return log_content_formatted
 
     def parse_diag_log(self, pkt, args=None):
-        # MODIFICATION: This method is no longer called directly by the main run_diag loop.
-        # The logic for parsing DIAG_LOG_F packets has been offloaded to the
-        # Android client application.
-        #
-        # Specific log decoders, like parse_lte_ml1_scell_meas (0xB17F), are being
-        # ported to the client side. As more decoders are ported, the corresponding
-        # methods in the Diag*LogParser.py files can be removed or marked as deprecated.
-        #
-        # The logic below that wrapped the raw payload in JSON is what we started with,
-        # but now even the HDLC frame separation happens on the client.
-        #
-        # if len(pkt) < 16:
-        #     return None
-        #
-        # pkt_header = self.log_header._make(struct.unpack('<BBHHHQ', pkt[0:16]))
-        # pkt_body = pkt[16:]
-        #
-        # if len(pkt_body) != (pkt_header.length2 - 12):
-        #     self.logger.log(logging.WARNING, "Packet length mismatch: expected {}, got {}".format(pkt_header.length2, len(pkt_body)+12))
-        #     # Don't discard, some devices seem to have this issue. Continue processing.
-        #
-        # # Package the raw log data into a JSON object and print to stdout
-        # # This will be picked up by the calling process (multi_channel_server.py)
-        # raw_log_data = {
-        #     "type": "scat_raw_log",
-        #     "log_id": pkt_header.log_id,
-        #     "payload_hex": pkt_body.hex()
-        # }
-        # try:
-        #     # The output of this print is captured by the server
-        #     print(json.dumps(raw_log_data))
-        # except Exception as e:
-        #     self.logger.log(logging.ERROR, f"Error serializing raw log to JSON: {e}")
-        #
-        # # Return None to prevent further processing by scat's original GSMTAP writer logic
-        return None
+        if len(pkt) < 16:
+            return None
+
+        pkt_header = self.log_header._make(struct.unpack('<BBHHHQ', pkt[0:16]))
+        pkt_body = pkt[16:]
+
+        if len(pkt_body) != (pkt_header.length2 - 12):
+            self.logger.log(logging.WARNING, "Packet length mismatch: expected {}, got {}".format(pkt_header.length2, len(pkt_body)+12))
+            # Don't discard, some devices seem to have this issue
+
+        if pkt_header.log_id in self.process.keys():
+            return self.process[pkt_header.log_id](pkt_header, pkt_body, args)
+        elif pkt_header.log_id in self.no_process.keys():
+            self.logger.log(logging.WARNING, 'Not handling log ID 0x{:x} ({})'.format(pkt_header.log_id, self.no_process[pkt_header.log_id]))
+            return None
+        else:
+            self.logger.log(logging.DEBUG, 'Skipping log ID 0x{:x}'.format(pkt_header.log_id))
+            return None
 
     event_header = namedtuple('QcDiagEventHeader', 'cmd_code msg_len')
 

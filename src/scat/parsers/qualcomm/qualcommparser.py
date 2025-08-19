@@ -1,6 +1,3 @@
-# class name: qualcommparser.py
-# class path: /Users/seb/Documents/git/myscat/src/scat/parsers/qualcomm/qualcommparser.py
-# action: update
 #!/usr/bin/env python3
 # coding: utf8
 # SPDX-License-Identifier: GPL-2.0-or-later
@@ -505,41 +502,52 @@ class QualcommParser:
         return payload_no_crc[4:]
 
     def parse_diag(self, pkt, hdlc_encoded = True, has_crc = True, args = None):
-        # Should contain DIAG command and CRC16
-        # pkt should not contain trailing 0x7E, and either HDLC encoded or not
-        # When the pkt is not HDLC encoded, hdlc_encoded should be set to True
-        # radio_id = 0 for default, larger than 1 for SIM 1 and such
-
-        if len(pkt) < 3:
-            return
-
-        if hdlc_encoded:
-            pkt = util.unwrap(pkt)
-
-        # Check and strip CRC if existing
-        if has_crc:
-            # Check CRC only if check_crc is enabled
-            if self.check_crc:
-                crc = util.dm_crc16(pkt[:-2])
-                crc_pkt = (pkt[-1] << 8) | pkt[-2]
-                if crc != crc_pkt:
-                    self.logger.log(logging.WARNING, "CRC mismatch: expected 0x{:04x}, got 0x{:04x}".format(crc, crc_pkt))
-                    self.logger.log(logging.DEBUG, util.xxd(pkt))
-            pkt = pkt[:-2]
-
-        # In the new architecture, we only care about forwarding DIAG_LOG_F packets.
-        # We ignore all other DIAG command responses (like version, build_id, config acks)
-        # to prevent crashes from missing parser methods during initialization.
-        if pkt[0] == diagcmd.DIAG_LOG_F:
-            return self.parse_diag_log(pkt, args)
-        elif pkt[0] == diagcmd.DIAG_MULTI_RADIO_CMD_F:
-            # We still need to handle this as it's a wrapper for other packets.
-            return self.parse_diag_multisim(pkt)
-        else:
-            self.logger.log(logging.DEBUG, 'Ignoring DIAG command {:#02x} in raw forwarding mode'.format(pkt[0]))
-            return None
+        # MODIFICATION: This method is no longer called by the main run_diag loop.
+        # The logic for HDLC unwrapping and CRC checking has been offloaded to the
+        # Android client application to reduce CPU load on the host machine (e.g., Raspberry Pi).
+        # The original code is left here for reference.
+        #
+        # # Should contain DIAG command and CRC16
+        # # pkt should not contain trailing 0x7E, and either HDLC encoded or not
+        # # When the pkt is not HDLC encoded, hdlc_encoded should be set to True
+        # # radio_id = 0 for default, larger than 1 for SIM 1 and such
+        #
+        # if len(pkt) < 3:
+        #     return
+        #
+        # if hdlc_encoded:
+        #     pkt = util.unwrap(pkt)
+        #
+        # # Check and strip CRC if existing
+        # if has_crc:
+        #     # Check CRC only if check_crc is enabled
+        #     if self.check_crc:
+        #         crc = util.dm_crc16(pkt[:-2])
+        #         crc_pkt = (pkt[-1] << 8) | pkt[-2]
+        #         if crc != crc_pkt:
+        #             self.logger.log(logging.WARNING, "CRC mismatch: expected 0x{:04x}, got 0x{:04x}".format(crc, crc_pkt))
+        #             self.logger.log(logging.DEBUG, util.xxd(pkt))
+        #     pkt = pkt[:-2]
+        #
+        # # In the new architecture, we only care about forwarding DIAG_LOG_F packets.
+        # # We ignore all other DIAG command responses (like version, build_id, config acks)
+        # # to prevent crashes from missing parser methods during initialization.
+        # if pkt[0] == diagcmd.DIAG_LOG_F:
+        #     return self.parse_diag_log(pkt, args)
+        # elif pkt[0] == diagcmd.DIAG_MULTI_RADIO_CMD_F:
+        #     # We still need to handle this as it's a wrapper for other packets.
+        #     return self.parse_diag_multisim(pkt)
+        # else:
+        #     self.logger.log(logging.DEBUG, 'Ignoring DIAG command {:#02x} in raw forwarding mode'.format(pkt[0]))
+        #     return None
+        return None
 
     def run_diag(self, writer_qmdl = None):
+        # MODIFICATION: This function has been heavily simplified.
+        # It no longer parses DIAG packets. Instead, it reads raw HDLC frames
+        # from the device and prints them to stdout as hex strings.
+        # The Android application is now responsible for HDLC unwrapping,
+        # CRC checking, and all subsequent parsing.
         oldbuf = b''
         loop = True
         try:
@@ -551,8 +559,10 @@ class QualcommParser:
                     else:
                         loop = False
                 buf = oldbuf + buf
+                # Split by the HDLC frame delimiter 0x7e
                 buf_atom = buf.split(b'\x7e')
 
+                # If the buffer doesn't end with 0x7e, the last part is an incomplete frame.
                 if len(buf) < 1 or buf[-1] != 0x7e:
                     oldbuf = buf_atom.pop()
                 else:
@@ -561,13 +571,17 @@ class QualcommParser:
                 for pkt in buf_atom:
                     if len(pkt) == 0:
                         continue
-                    parse_result = self.parse_diag(pkt)
+
+                    # Re-add the delimiters to form a complete HDLC frame
+                    full_frame = b'\x7e' + pkt + b'\x7e'
+
+                    # Output the raw frame as a hex string to stdout.
+                    # This is captured by the server script and forwarded to the app.
+                    print(full_frame.hex())
+                    sys.stdout.flush()
 
                     if writer_qmdl:
-                        writer_qmdl.write_cp(pkt + b'\x7e')
-
-                    if parse_result is not None:
-                        self.postprocess_parse_result(parse_result)
+                        writer_qmdl.write_cp(full_frame)
 
         except KeyboardInterrupt:
             return
@@ -767,34 +781,41 @@ class QualcommParser:
         return log_content_formatted
 
     def parse_diag_log(self, pkt, args=None):
-        """
-Parses the DIAG_LOG_F packet.
-Instead of decoding, this now forwards the raw log packet as JSON to stdout.
-        """
-        if len(pkt) < 16:
-            return None
-
-        pkt_header = self.log_header._make(struct.unpack('<BBHHHQ', pkt[0:16]))
-        pkt_body = pkt[16:]
-
-        if len(pkt_body) != (pkt_header.length2 - 12):
-            self.logger.log(logging.WARNING, "Packet length mismatch: expected {}, got {}".format(pkt_header.length2, len(pkt_body)+12))
-            # Don't discard, some devices seem to have this issue. Continue processing.
-
-        # Package the raw log data into a JSON object and print to stdout
-        # This will be picked up by the calling process (multi_channel_server.py)
-        raw_log_data = {
-            "type": "scat_raw_log",
-            "log_id": pkt_header.log_id,
-            "payload_hex": pkt_body.hex()
-        }
-        try:
-            # The output of this print is captured by the server
-            print(json.dumps(raw_log_data))
-        except Exception as e:
-            self.logger.log(logging.ERROR, f"Error serializing raw log to JSON: {e}")
-
-        # Return None to prevent further processing by scat's original GSMTAP writer logic
+        # MODIFICATION: This method is no longer called directly by the main run_diag loop.
+        # The logic for parsing DIAG_LOG_F packets has been offloaded to the
+        # Android client application.
+        #
+        # Specific log decoders, like parse_lte_ml1_scell_meas (0xB17F), are being
+        # ported to the client side. As more decoders are ported, the corresponding
+        # methods in the Diag*LogParser.py files can be removed or marked as deprecated.
+        #
+        # The logic below that wrapped the raw payload in JSON is what we started with,
+        # but now even the HDLC frame separation happens on the client.
+        #
+        # if len(pkt) < 16:
+        #     return None
+        #
+        # pkt_header = self.log_header._make(struct.unpack('<BBHHHQ', pkt[0:16]))
+        # pkt_body = pkt[16:]
+        #
+        # if len(pkt_body) != (pkt_header.length2 - 12):
+        #     self.logger.log(logging.WARNING, "Packet length mismatch: expected {}, got {}".format(pkt_header.length2, len(pkt_body)+12))
+        #     # Don't discard, some devices seem to have this issue. Continue processing.
+        #
+        # # Package the raw log data into a JSON object and print to stdout
+        # # This will be picked up by the calling process (multi_channel_server.py)
+        # raw_log_data = {
+        #     "type": "scat_raw_log",
+        #     "log_id": pkt_header.log_id,
+        #     "payload_hex": pkt_body.hex()
+        # }
+        # try:
+        #     # The output of this print is captured by the server
+        #     print(json.dumps(raw_log_data))
+        # except Exception as e:
+        #     self.logger.log(logging.ERROR, f"Error serializing raw log to JSON: {e}")
+        #
+        # # Return None to prevent further processing by scat's original GSMTAP writer logic
         return None
 
     event_header = namedtuple('QcDiagEventHeader', 'cmd_code msg_len')
